@@ -245,7 +245,7 @@
           ${p.spaces ? `<p><b>Platser:</b> ca ${p.spaces}</p>` : ""}
           ${p.source ? `<p><a href="${esc(p.source)}" target="_blank" rel="noopener">Operatörens sida</a> · kontrollerad ${esc(p.checked)}</p>` : ""}
           <p><a href="https://www.google.com/maps/dir/?api=1&destination=${p.near.point[0]},${p.near.point[1]}" target="_blank" rel="noopener">Vägbeskrivning</a></p>
-          <button type="button" class="map-btn">Visa på kartan</button>
+          <button type="button" class="map-btn primary">Visa på kartan</button>
         </div>
       </div>`;
     });
