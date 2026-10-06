@@ -158,14 +158,14 @@
   let typingTimer;
   $("q").addEventListener("input", () => { clearTimeout(typingTimer); typingTimer = setTimeout(search, 350); });
 
-  function setDest(lat, lon, label) {
+  function setDest(lat, lon, label, shareName) {
     dest = { lat, lon, label };
     $("dest").hidden = false;
     $("dest").textContent = "📍 " + label;
     render();
     map.setView([lat, lon], 16);
     // Put the destination in the address bar so the link can be shared
-    const params = new URLSearchParams({ lat: lat.toFixed(5), lon: lon.toFixed(5), name: label });
+    const params = new URLSearchParams({ lat: lat.toFixed(5), lon: lon.toFixed(5), name: shareName || label });
     history.replaceState(null, "", "?" + params);
     if (isPhone()) {
       $("q").blur(); // close the keyboard
@@ -283,6 +283,41 @@
     if (isPhone()) card.scrollIntoView({ behavior: "smooth", block: "center" });
     else card.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
+
+  // "Min position": use the phone's location as destination, arriving now.
+  // The position never leaves the browser (except in the address bar, for sharing).
+  const UPPSALA = [59.8586, 17.6389];
+  $("locBtn").addEventListener("click", () => {
+    const btn = $("locBtn");
+    const msg = (text) => { $("locMsg").textContent = text; $("locMsg").hidden = !text; };
+    if (!navigator.geolocation) { msg("Din webbläsare kan inte dela din position."); return; }
+    msg("");
+    btn.disabled = true;
+    btn.textContent = "📍 Hämtar position…";
+    const done = () => { btn.disabled = false; btn.textContent = "📍 Min position"; };
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        done();
+        const { latitude: lat, longitude: lon, accuracy } = pos.coords;
+        if (distM([lat, lon], UPPSALA) > 20000) {
+          msg("Du verkar vara utanför Uppsala – ParkUpp täcker bara Uppsala än så länge.");
+          return;
+        }
+        const label = "Min position" + (accuracy > 50 ? " (±" + Math.round(accuracy) + " m)" : "");
+        setNow();
+        setDest(lat, lon, label, "Delad position");
+      },
+      (err) => {
+        done();
+        msg({
+          1: "Platsåtkomst nekad. Tillåt plats för den här sidan i webbläsarens inställningar och försök igen.",
+          2: "Kunde inte hitta din position. Försök igen, eller sök på en adress.",
+          3: "Det tog för lång tid att hitta din position. Försök igen.",
+        }[err.code] || "Kunde inte hämta din position.");
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+    );
+  });
 
   // Shared link: ?lat=..&lon=..&name=..
   function loadFromUrl() {
