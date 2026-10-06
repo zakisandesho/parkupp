@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Uppsala Parking Finder</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+  <style>
+    :root {
+      --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #5d6676; --line: #e1e4ea;
+      --accent: #1f6feb; --accent-soft: #e6efff; --good: #1a7f37; --warn: #9a6700; --bad: #c62828;
+      --street: #1f6feb; --kommunlot: #8250df; --private: #d1242f; --free: #1a7f37;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #0f1218; --panel: #171b23; --text: #e6e9ef; --muted: #9aa3b2; --line: #2a303b;
+        --accent: #4c8dff; --accent-soft: #1c2a44; --good: #3fb950; --warn: #d29922; --bad: #f47067;
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+    .app { display: grid; grid-template-columns: 420px 1fr; height: 100vh; }
+    aside { overflow-y: auto; padding: 20px; background: var(--panel); border-right: 1px solid var(--line); }
+    #map { height: 100%; }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    .lead { color: var(--muted); margin: 0 0 16px; font-size: 14px; }
+    form { display: grid; gap: 10px; margin-bottom: 16px; }
+    label { font-size: 13px; color: var(--muted); display: grid; gap: 4px; }
+    input, select, button { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .search { display: flex; gap: 6px; }
+    .search input { flex: 1; min-width: 0; }
+    button { cursor: pointer; }
+    button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+    #suggestions { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; display: none; }
+    #suggestions li { padding: 8px 10px; cursor: pointer; font-size: 14px; border-bottom: 1px solid var(--line); }
+    #suggestions li:last-child { border-bottom: 0; }
+    #suggestions li:hover { background: var(--accent-soft); }
+    .hint { font-size: 12px; color: var(--muted); }
+    .dest { font-size: 14px; padding: 8px 10px; background: var(--accent-soft); border-radius: 8px; }
+    .tabs { display: flex; gap: 6px; margin: 4px 0 12px; }
+    .tabs button { flex: 1; font-size: 14px; }
+    .tabs button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .card { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; display: grid; grid-template-columns: 26px 1fr auto; gap: 4px 10px; }
+    .card:hover { border-color: var(--accent); }
+    .num { width: 24px; height: 24px; border-radius: 50%; color: #fff; display: grid; place-items: center; font-size: 12px; font-weight: 600; }
+    .name { font-weight: 600; }
+    .sub { font-size: 13px; color: var(--muted); }
+    .cost { font-size: 20px; font-weight: 700; text-align: right; white-space: nowrap; }
+    .cost.free { color: var(--good); }
+    .walk { font-size: 13px; color: var(--muted); text-align: right; white-space: nowrap; }
+    .details { grid-column: 2 / 4; font-size: 13px; display: none; }
+    .card.open .details { display: block; }
+    .details p { margin: 4px 0; }
+    .apps { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; grid-column: 2 / 4; }
+    .app-tag { font-size: 12px; padding: 1px 7px; border-radius: 99px; background: var(--accent-soft); }
+    .warn { color: var(--warn); font-size: 13px; grid-column: 2 / 4; }
+    .badge { font-size: 11px; padding: 1px 6px; border-radius: 4px; color: #fff; margin-left: 4px; vertical-align: 1px; }
+    .muted { color: var(--muted); font-size: 13px; }
+    footer { margin-top: 20px; font-size: 12px; color: var(--muted); }
+    footer a, .details a { color: var(--accent); }
+    @media (max-width: 800px) {
+      .app { grid-template-columns: 1fr; grid-template-rows: auto 50vh; height: auto; }
+      aside { border-right: 0; padding: 16px; order: 1; }
+      #map { order: 0; height: 50vh; position: sticky; top: 0; z-index: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside>
+      <h1>Uppsala Parking Finder</h1>
+      <p class="lead">Find the nearest and cheapest parking for your visit, with the total price and the app you'll need.</p>
+
+      <form id="form">
+        <label>Where are you going?
+          <div class="search">
+            <input id="q" placeholder="Place, business or address, e.g. Hotell Botanika" autocomplete="off">
+            <button type="button" id="searchBtn">Search</button>
+          </div>
+        </label>
+        <ul id="suggestions"></ul>
+        <div id="dest" class="dest" hidden></div>
+        <span class="hint">Or click the map to set your destination.</span>
+        <div class="row">
+          <label>Date <input type="date" id="date" required></label>
+          <label>Arrival <input type="time" id="time" step="900" required></label>
+        </div>
+        <div class="row">
+          <label>How long
+            <select id="duration">
+              <option value="30">30 min</option><option value="60">1 h</option><option value="90">1.5 h</option>
+              <option value="120" selected>2 h</option><option value="180">3 h</option><option value="240">4 h</option>
+              <option value="300">5 h</option><option value="360">6 h</option><option value="480">8 h</option>
+              <option value="600">10 h</option><option value="1440">24 h</option><option value="2880">2 days</option>
+            </select>
+          </label>
+          <label>Max walk
+            <select id="walk">
+              <option value="300">300 m (~4 min)</option><option value="600" selected>600 m (~8 min)</option>
+              <option value="1000">1 km (~13 min)</option><option value="1500">1.5 km (~19 min)</option>
+              <option value="2500">2.5 km (~30 min)</option>
+            </select>
+          </label>
+        </div>
+      </form>
+
+      <div id="results"><p class="muted">Pick a destination to see parking options.</p></div>
+
+      <footer>
+        Street parking and kommun car parks: <a href="https://www.uppsala.se/gator-trafik-och-resor/parkera-din-cykel-bil-eller-andra-fordon/parkeringskartan/" target="_blank" rel="noopener">Uppsala kommun parking map</a>, data fetched <span id="fetched"></span>.
+        Private car parks entered by hand from operator websites. Prices are estimates. Always check the sign on site.
+        Walking distances are straight-line × 1.25. Map © OpenStreetMap contributors.
+      </footer>
+    </aside>
+    <div id="map"></div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script src="tariff.js"></script>
+  <script src="data/kommun.js"></script>
+  <script src="data/carparks.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
