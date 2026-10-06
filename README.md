@@ -1,4 +1,4 @@
-# Uppsala Parking Finder
+# ParkUpp
 
 Find the nearest and cheapest parking in Uppsala for a given destination, date and length of stay,
 with the total price and which app to pay with.
