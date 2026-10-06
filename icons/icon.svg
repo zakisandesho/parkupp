@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Full-bleed background so Android can crop it to any shape (maskable) -->
+  <rect width="512" height="512" fill="#1f6feb"/>
+  <!-- Map pin -->
+  <path d="M256 92c-72 0-128 55-128 125 0 92 128 203 128 203s128-111 128-203c0-70-56-125-128-125z" fill="#ffffff"/>
+  <!-- P -->
+  <path d="M218 152h52c36 0 60 21 60 54s-24 54-60 54h-22v52h-30zm30 26v56h20c18 0 30-10 30-28s-12-28-30-28z" fill="#1f6feb"/>
+</svg>
