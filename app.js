@@ -88,10 +88,20 @@
 
   // ---------- form ----------
   const $ = (id) => document.getElementById(id);
-  const now = new Date(Date.now() + 15 * 60000);
-  now.setMinutes(Math.ceil(now.getMinutes() / 15) * 15, 0, 0);
-  $("date").value = now.getFullYear() + "-" + pad(now.getMonth() + 1) + "-" + pad(now.getDate());
-  $("time").value = pad(now.getHours()) + ":" + pad(now.getMinutes());
+  // A plain dropdown instead of <input type="time">: the native time picker doesn't open on some Android phones
+  for (let m = 0; m < 1440; m += 15) {
+    const v = pad(Math.floor(m / 60)) + ":" + pad(m % 60);
+    $("time").add(new Option(v, v));
+  }
+
+  function setNow() {
+    const now = new Date();
+    now.setMinutes(Math.ceil(now.getMinutes() / 15) * 15, 0, 0); // next quarter hour (may roll to tomorrow)
+    $("date").value = now.getFullYear() + "-" + pad(now.getMonth() + 1) + "-" + pad(now.getDate());
+    $("time").value = pad(now.getHours()) + ":" + pad(now.getMinutes());
+  }
+  setNow();
+  $("nowBtn").addEventListener("click", () => { setNow(); render(); });
   $("fetched").textContent = K.fetched;
 
   let dest = null;

@@ -28,6 +28,7 @@
     label { font-size: 13px; color: var(--muted); display: grid; gap: 4px; }
     input, select, button { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); }
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .row.when { grid-template-columns: 1fr 1fr auto; align-items: end; }
     .search { display: flex; gap: 6px; }
     .search input { flex: 1; min-width: 0; }
     button { cursor: pointer; }
@@ -82,9 +83,10 @@
         <ul id="suggestions"></ul>
         <div id="dest" class="dest" hidden></div>
         <span class="hint">Or click the map to set your destination.</span>
-        <div class="row">
+        <div class="row when">
           <label>Date <input type="date" id="date" required></label>
-          <label>Arrival <input type="time" id="time" step="900" required></label>
+          <label>Arrival <select id="time"></select></label>
+          <button type="button" id="nowBtn" title="Arrive now">Now</button>
         </div>
         <div class="row">
           <label>How long
