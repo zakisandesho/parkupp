@@ -82,6 +82,7 @@
     attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
   }).addTo(map);
   const layer = L.layerGroup().addTo(map);
+  const isPhone = () => window.matchMedia("(max-width: 800px)").matches;
   const markers = [];
 
   map.on("click", (e) => setDest(e.latlng.lat, e.latlng.lng, "Point on map"));
@@ -163,6 +164,13 @@
     $("dest").textContent = "📍 " + label;
     render();
     map.setView([lat, lon], 16);
+    // Put the destination in the address bar so the link can be shared
+    const params = new URLSearchParams({ lat: lat.toFixed(5), lon: lon.toFixed(5), name: label });
+    history.replaceState(null, "", "?" + params);
+    if (isPhone()) {
+      $("q").blur(); // close the keyboard
+      $("map").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
   }
 
   // ---------- results ----------
@@ -237,6 +245,7 @@
           ${p.spaces ? `<p><b>Spaces:</b> about ${p.spaces}</p>` : ""}
           ${p.source ? `<p><a href="${esc(p.source)}" target="_blank" rel="noopener">Operator page</a> · checked ${esc(p.checked)}</p>` : ""}
           <p><a href="https://www.google.com/maps/dir/?api=1&destination=${p.near.point[0]},${p.near.point[1]}" target="_blank" rel="noopener">Directions</a></p>
+          <button type="button" class="map-btn">Show on map</button>
         </div>
       </div>`;
     });
@@ -249,15 +258,37 @@
       b.onclick = () => { sortMode = b.dataset.sort; render(); };
     });
     el.querySelectorAll(".card").forEach((c) => {
+      const m = () => markers[+c.dataset.i];
       c.onclick = (e) => {
         if (e.target.tagName === "A") return;
+        if (e.target.classList.contains("map-btn")) {
+          $("map").scrollIntoView({ behavior: "smooth", block: "start" });
+          map.panTo(m().getLatLng());
+          m().openPopup();
+          return;
+        }
         c.classList.toggle("open");
-        const m = markers[+c.dataset.i];
-        map.panTo(m.getLatLng());
-        m.openPopup();
+        if (!isPhone()) { map.panTo(m().getLatLng()); m().openPopup(); }
       };
     });
     drawMap(list);
+  }
+
+  // Map marker tapped -> open and highlight the matching card in the list
+  function showCard(i) {
+    const card = document.querySelector(`.card[data-i="${i}"]`);
+    if (!card) return;
+    card.classList.add("open", "flash");
+    setTimeout(() => card.classList.remove("flash"), 1500);
+    if (isPhone()) card.scrollIntoView({ behavior: "smooth", block: "center" });
+    else card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  // Shared link: ?lat=..&lon=..&name=..
+  function loadFromUrl() {
+    const u = new URLSearchParams(location.search);
+    const lat = parseFloat(u.get("lat")), lon = parseFloat(u.get("lon"));
+    if (!isNaN(lat) && !isNaN(lon)) setDest(lat, lon, u.get("name") || "Shared location");
   }
 
   function drawMap(list) {
@@ -275,7 +306,9 @@
       });
       const m = L.marker(p.near.point, { icon }).addTo(layer)
         .bindPopup(`<b>${esc(p.name)}</b><br>${p.cost === 0 ? "Free" : p.cost + " kr"} · ${p.walkMin} min walk`);
+      m.on("click", () => showCard(i));
       markers.push(m);
     });
   }
+  loadFromUrl();
 })();
