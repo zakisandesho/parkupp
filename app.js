@@ -7,10 +7,10 @@
   const MAX_RESULTS = 10;
 
   const TYPES = {
-    street: { label: "Kommun street parking", color: "var(--street)", hex: "#1f6feb" },
-    kommunlot: { label: "Kommun car park", color: "var(--kommunlot)", hex: "#8250df" },
-    private: { label: "Private car park", color: "var(--private)", hex: "#d1242f" },
-    free: { label: "Free street parking", color: "var(--free)", hex: "#1a7f37" },
+    street: { label: "Gatuparkering", color: "var(--street)", hex: "#1f6feb" },
+    kommunlot: { label: "Kommunal parkering", color: "var(--kommunlot)", hex: "#8250df" },
+    private: { label: "Privat parkering", color: "var(--private)", hex: "#d1242f" },
+    free: { label: "Gratis gatuparkering", color: "var(--free)", hex: "#1a7f37" },
   };
 
   // Opening hours for kommun garages (from uppsalaparkering.se), keyed by area code
@@ -24,7 +24,7 @@
   K.streets.forEach((s) => {
     const zone = K.zones[s.code];
     places.push({
-      type: "street", name: s.street, sub: zone.name + " · area code " + s.code, lines: s.lines,
+      type: "street", name: s.street, sub: zone.name + " · områdeskod " + s.code, lines: s.lines,
       tariff: zone, priceText: zone.text, limit: s.limit, note: s.note, spaces: s.spaces, operator: "kommun",
       assumed: zone.assumedAllDays,
     });
@@ -32,15 +32,15 @@
   K.lots.forEach((l) => {
     const zone = K.zones[l.code];
     places.push({
-      type: "kommunlot", name: l.street.replace(/^Besök(sparkering|are) - /, ""), sub: "Area code " + l.code,
+      type: "kommunlot", name: l.street.replace(/^Besök(sparkering|are) - /, ""), sub: "Områdeskod " + l.code,
       point: l.point, tariff: zone, priceText: zone.text, operator: "kommun", open: KOMMUN_OPEN[l.code],
       assumed: zone.assumedAllDays,
     });
   });
   K.free.forEach((f) => {
     places.push({
-      type: "free", name: f.street, sub: "Free street parking", lines: f.lines, tariff: { rules: [] },
-      priceText: "Free", limit: f.limit, note: f.note, spaces: f.spaces, operator: null,
+      type: "free", name: f.street, sub: "Gratis gatuparkering", lines: f.lines, tariff: { rules: [] },
+      priceText: "Gratis", limit: f.limit, note: f.note, spaces: f.spaces, operator: null,
     });
   });
   window.CARPARKS.forEach((c) => {
@@ -79,13 +79,13 @@
   // OSM's tile policy needs a real web origin (Referer), so serve the site over http, not file://
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19, referrerPolicy: "strict-origin-when-cross-origin",
-    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-bidragsgivare',
   }).addTo(map);
   const layer = L.layerGroup().addTo(map);
   const isPhone = () => window.matchMedia("(max-width: 800px)").matches;
   const markers = [];
 
-  map.on("click", (e) => setDest(e.latlng.lat, e.latlng.lng, "Point on map"));
+  map.on("click", (e) => setDest(e.latlng.lat, e.latlng.lng, "Punkt på kartan"));
 
   // ---------- form ----------
   const $ = (id) => document.getElementById(id);
@@ -145,7 +145,7 @@
     if (!hits.length) { try { hits = await nominatim(q); } catch (err) { /* handled below */ } }
     if (seq !== searchSeq) return; // a newer search has started
     ul.style.display = "block";
-    if (!hits.length) { ul.innerHTML = "<li>No matches in Uppsala. Try another name, or click the map.</li>"; return; }
+    if (!hits.length) { ul.innerHTML = "<li>Inga träffar i Uppsala. Prova ett annat namn, eller tryck på kartan.</li>"; return; }
     ul.innerHTML = "";
     hits.forEach((h) => {
       const li = document.createElement("li");
@@ -188,9 +188,9 @@
       const r = Tariff.calculate(p.tariff, start, minutes, p.limit);
       if (!r.allowed) { excluded++; return; }
       const warnings = [];
-      if (p.open && Tariff.overlaps(invert(p.open), start, minutes)) warnings.push("Closed during part of your stay. Check opening hours");
-      if (p.assumed) warnings.push("Sign text has no days; price assumes every day");
-      if (p.approx) warnings.push("Map position is approximate");
+      if (p.open && Tariff.overlaps(invert(p.open), start, minutes)) warnings.push("Stängt under en del av din vistelse – kolla öppettiderna");
+      if (p.assumed) warnings.push("Skylten anger inga dagar; priset räknar med alla dagar");
+      if (p.approx) warnings.push("Positionen på kartan är ungefärlig");
       ok.push({ ...p, near, walkM, walkMin: Math.max(1, Math.round(walkM / WALK_M_PER_MIN)), cost: r.cost, warnings });
     });
     return { ok, excluded, start, minutes };
@@ -215,17 +215,17 @@
     const { ok, excluded, start, minutes } = evaluate();
     const list = sortResults(ok);
     const el = $("results");
-    const dayName = start.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" });
+    const dayName = start.toLocaleDateString("sv-SE", { weekday: "long", day: "numeric", month: "short" });
     const end = new Date(start.getTime() + minutes * 60000);
-    const dayNote = { sun: " (Sunday/holiday rules)", sat: " (Saturday rules)", wd: "" }[Tariff.dayType(start)];
+    const dayNote = { sun: " (sön- och helgdagsregler)", sat: " (lördagsregler)", wd: "" }[Tariff.dayType(start)];
 
     let html = `<p class="muted">${esc(dayName)} ${pad(start.getHours())}:${pad(start.getMinutes())}–${pad(end.getHours())}:${pad(end.getMinutes())}${dayNote}</p>`;
     html += `<div class="tabs">
-      <button data-sort="balance" title="Price + ${KR_PER_WALK_MIN} kr per walking minute">Best balance</button>
-      <button data-sort="cheapest">Cheapest</button>
-      <button data-sort="nearest">Nearest</button></div>`;
+      <button data-sort="balance" title="Pris + ${KR_PER_WALK_MIN} kr per gångminut">Bäst totalt</button>
+      <button data-sort="cheapest">Billigast</button>
+      <button data-sort="nearest">Närmast</button></div>`;
     if (!list.length) {
-      html += `<p class="muted">Nothing found within this walking distance. Try a longer max walk.</p>`;
+      html += `<p class="muted">Inget hittades inom det här gångavståndet. Prova ett längre maxavstånd.</p>`;
     }
     list.forEach((p, i) => {
       const t = TYPES[p.type];
@@ -234,23 +234,23 @@
         <div class="num" style="background:${t.color}">${i + 1}</div>
         <div><div class="name">${esc(p.name)}<span class="badge" style="background:${t.color}">${t.label}</span></div>
           <div class="sub">${esc(p.sub)}</div></div>
-        <div><div class="cost ${p.cost === 0 ? "free" : ""}">${p.cost === 0 ? "Free" : p.cost + " kr"}</div>
+        <div><div class="cost ${p.cost === 0 ? "free" : ""}">${p.cost === 0 ? "Gratis" : p.cost + " kr"}</div>
           <div class="walk">🚶 ${Math.round(p.walkM / 10) * 10} m · ${p.walkMin} min</div></div>
         ${apps.length ? `<div class="apps">${apps.map((a) => `<span class="app-tag">${esc(a)}</span>`).join("")}</div>` : ""}
         ${p.warnings.map((w) => `<div class="warn">⚠ ${esc(w)}</div>`).join("")}
         <div class="details">
-          <p><b>Price:</b> ${esc(p.priceText)}</p>
-          ${p.limit ? `<p><b>Time limit:</b> ${esc(p.limit.text)}</p>` : ""}
-          ${p.note ? `<p><b>Note:</b> ${esc(p.note)}</p>` : ""}
-          ${p.spaces ? `<p><b>Spaces:</b> about ${p.spaces}</p>` : ""}
-          ${p.source ? `<p><a href="${esc(p.source)}" target="_blank" rel="noopener">Operator page</a> · checked ${esc(p.checked)}</p>` : ""}
-          <p><a href="https://www.google.com/maps/dir/?api=1&destination=${p.near.point[0]},${p.near.point[1]}" target="_blank" rel="noopener">Directions</a></p>
-          <button type="button" class="map-btn">Show on map</button>
+          <p><b>Pris:</b> ${esc(p.priceText)}</p>
+          ${p.limit ? `<p><b>Tidsbegränsning:</b> ${esc(p.limit.text)}</p>` : ""}
+          ${p.note ? `<p><b>Obs:</b> ${esc(p.note)}</p>` : ""}
+          ${p.spaces ? `<p><b>Platser:</b> ca ${p.spaces}</p>` : ""}
+          ${p.source ? `<p><a href="${esc(p.source)}" target="_blank" rel="noopener">Operatörens sida</a> · kontrollerad ${esc(p.checked)}</p>` : ""}
+          <p><a href="https://www.google.com/maps/dir/?api=1&destination=${p.near.point[0]},${p.near.point[1]}" target="_blank" rel="noopener">Vägbeskrivning</a></p>
+          <button type="button" class="map-btn">Visa på kartan</button>
         </div>
       </div>`;
     });
     if (excluded) {
-      html += `<p class="muted">${excluded} nearby option${excluded > 1 ? "s" : ""} hidden because your stay is longer than the time limit.</p>`;
+      html += `<p class="muted">${excluded} alternativ i närheten dolda eftersom din vistelse är längre än tidsbegränsningen.</p>`;
     }
     el.innerHTML = html;
     el.querySelectorAll(".tabs button").forEach((b) => {
@@ -288,7 +288,7 @@
   function loadFromUrl() {
     const u = new URLSearchParams(location.search);
     const lat = parseFloat(u.get("lat")), lon = parseFloat(u.get("lon"));
-    if (!isNaN(lat) && !isNaN(lon)) setDest(lat, lon, u.get("name") || "Shared location");
+    if (!isNaN(lat) && !isNaN(lon)) setDest(lat, lon, u.get("name") || "Delad plats");
   }
 
   function drawMap(list) {
@@ -305,7 +305,7 @@
         iconSize: [28, 28], iconAnchor: [14, 14],
       });
       const m = L.marker(p.near.point, { icon }).addTo(layer)
-        .bindPopup(`<b>${esc(p.name)}</b><br>${p.cost === 0 ? "Free" : p.cost + " kr"} · ${p.walkMin} min walk`);
+        .bindPopup(`<b>${esc(p.name)}</b><br>${p.cost === 0 ? "Gratis" : p.cost + " kr"} · ${p.walkMin} min promenad`);
       m.on("click", () => showCard(i));
       markers.push(m);
     });

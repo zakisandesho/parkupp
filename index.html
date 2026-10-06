@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="sv">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -93,49 +93,49 @@
     <aside>
       <div class="top">
       <h1>ParkUpp</h1>
-      <p class="lead">Find the nearest and cheapest parking for your visit, with the total price and the app you'll need.</p>
+      <p class="lead">Hitta närmaste och billigaste parkeringen för ditt besök – med totalpris och vilken app du behöver.</p>
 
       <form id="form">
-        <label>Where are you going?
+        <label>Vart ska du?
           <div class="search">
-            <input id="q" placeholder="Place, business or address" autocomplete="off">
-            <button type="button" id="searchBtn">Search</button>
+            <input id="q" placeholder="Plats, företag eller adress" autocomplete="off">
+            <button type="button" id="searchBtn">Sök</button>
           </div>
         </label>
         <ul id="suggestions"></ul>
         <div id="dest" class="dest" hidden></div>
-        <span class="hint">Or click the map to set your destination.</span>
+        <span class="hint">Eller tryck på kartan för att välja mål.</span>
         <div class="row when">
-          <label>Date <input type="date" id="date" required></label>
-          <label>Arrival <select id="time"></select></label>
-          <button type="button" id="nowBtn" title="Arrive now">Now</button>
+          <label>Datum <input type="date" id="date" required></label>
+          <label>Ankomst <select id="time"></select></label>
+          <button type="button" id="nowBtn" title="Ankomst nu">Nu</button>
         </div>
         <div class="row">
-          <label>How long
+          <label>Hur länge
             <select id="duration">
-              <option value="30">30 min</option><option value="60">1 h</option><option value="90">1.5 h</option>
+              <option value="30">30 min</option><option value="60">1 h</option><option value="90">1,5 h</option>
               <option value="120" selected>2 h</option><option value="180">3 h</option><option value="240">4 h</option>
               <option value="300">5 h</option><option value="360">6 h</option><option value="480">8 h</option>
-              <option value="600">10 h</option><option value="1440">24 h</option><option value="2880">2 days</option>
+              <option value="600">10 h</option><option value="1440">24 h</option><option value="2880">2 dygn</option>
             </select>
           </label>
-          <label>Max walk
+          <label>Max gångavstånd
             <select id="walk">
               <option value="300">300 m (~4 min)</option><option value="600" selected>600 m (~8 min)</option>
-              <option value="1000">1 km (~13 min)</option><option value="1500">1.5 km (~19 min)</option>
-              <option value="2500">2.5 km (~30 min)</option>
+              <option value="1000">1 km (~13 min)</option><option value="1500">1,5 km (~19 min)</option>
+              <option value="2500">2,5 km (~30 min)</option>
             </select>
           </label>
         </div>
       </form>
       </div>
 
-      <div id="results"><p class="muted">Pick a destination to see parking options.</p></div>
+      <div id="results"><p class="muted">Välj ett mål för att se parkeringsalternativ.</p></div>
 
       <footer>
-        Street parking and kommun car parks: <a href="https://www.uppsala.se/gator-trafik-och-resor/parkera-din-cykel-bil-eller-andra-fordon/parkeringskartan/" target="_blank" rel="noopener">Uppsala kommun parking map</a>, data fetched <span id="fetched"></span>.
-        Private car parks entered by hand from operator websites. Prices are estimates. Always check the sign on site.
-        Walking distances are straight-line × 1.25. Map © OpenStreetMap contributors.
+        Gatuparkering och kommunens parkeringar: <a href="https://www.uppsala.se/gator-trafik-och-resor/parkera-din-cykel-bil-eller-andra-fordon/parkeringskartan/" target="_blank" rel="noopener">Uppsala kommuns parkeringskarta</a>, data hämtad <span id="fetched"></span>.
+        Privata parkeringar är inmatade för hand från operatörernas webbplatser. Priserna är uppskattningar – kontrollera alltid skylten på plats.
+        Gångavstånd är fågelvägen × 1,25. Karta © OpenStreetMap-bidragsgivare.
       </footer>
     </aside>
     <div id="map"></div>

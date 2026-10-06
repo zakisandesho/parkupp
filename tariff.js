@@ -87,10 +87,10 @@
   function calculate(tariff, start, minutes, limit) {
     const reasons = [];
     if (tariff.maxStayMin && minutes > tariff.maxStayMin) {
-      reasons.push("Max stay " + formatDuration(tariff.maxStayMin));
+      reasons.push("Max parkeringstid " + formatDuration(tariff.maxStayMin));
     }
     if (limit && minutes > limit.maxMin && (!limit.windows || overlaps(limit.windows, start, minutes))) {
-      reasons.push("Time limit: " + limit.text);
+      reasons.push("Tidsbegränsning: " + limit.text);
     }
 
     const charges = []; // charge per minute index
@@ -145,7 +145,7 @@
   }
 
   function formatDuration(min) {
-    if (min % 1440 === 0) return min / 1440 + (min === 1440 ? " day" : " days");
+    if (min % 1440 === 0) return min / 1440 + " dygn";
     if (min % 60 === 0) return min / 60 + " h";
     return min + " min";
   }

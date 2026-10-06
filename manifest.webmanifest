@@ -1,7 +1,8 @@
 {
   "name": "ParkUpp",
   "short_name": "ParkUpp",
-  "description": "Find the nearest and cheapest parking in Uppsala",
+  "description": "Hitta närmaste och billigaste parkeringen i Uppsala",
+  "lang": "sv",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
