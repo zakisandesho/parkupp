@@ -3,7 +3,8 @@
 Usage:  python3 build_data.py           (download fresh data, then build)
         python3 build_data.py --offline (build from the .geojson files already here)
 
-Source: Uppsala kommun's parking map (ArcGIS FeatureServer, public, no key).
+Sources: Uppsala kommun's parking map and address register (ArcGIS FeatureServers, public, no key),
+plus OpenStreetMap car parks via Overpass.
 The server only allows browser requests from uppsala.se, so we snapshot it here.
 """
 import json
@@ -254,6 +255,7 @@ def main():
           f"size={len(js) // 1024} KB")
 
     build_osm(offline="--offline" in sys.argv)
+    build_addresses(offline="--offline" in sys.argv)
 
 
 # ---------- OpenStreetMap car parks (fallback for places the kommun data doesn't cover) ----------
@@ -264,22 +266,28 @@ OSM_ACCESS_OK = {None, "yes", "public", "customers", "permissive", "destination"
 OSM_SKIP_TYPES = {"street_side", "lane", "on_kerb", "half_on_kerb", "layby"}  # mostly covered by kommun streets
 
 
+def overpass(query, raw_file):
+    """Download an Overpass query to raw_file. Returns False if every server failed."""
+    data = urllib.parse.urlencode({"data": query}).encode()
+    for attempt, server in enumerate(OVERPASS_SERVERS * 2):
+        try:
+            req = urllib.request.Request(server, data=data, headers={"User-Agent": "ParkUpp data build"})
+            with urllib.request.urlopen(req, timeout=180) as r:
+                body = r.read()
+            json.loads(body)  # busy servers sometimes answer 200 with an HTML error page
+            raw_file.write_bytes(body)
+            return True
+        except Exception as e:  # Overpass servers are often busy
+            print(f"OSM download from {server} failed: {e}")
+            time.sleep(10 * (attempt + 1))
+    return False
+
+
 def build_osm(offline=False):
     raw_file = HERE / "osm_raw.json"
-    if not offline:
-        data = urllib.parse.urlencode({"data": OSM_QUERY}).encode()
-        for attempt, server in enumerate(OVERPASS_SERVERS * 2):
-            try:
-                req = urllib.request.Request(server, data=data, headers={"User-Agent": "ParkUpp data build"})
-                with urllib.request.urlopen(req, timeout=120) as r:
-                    raw_file.write_bytes(r.read())
-                break
-            except Exception as e:  # Overpass servers are often busy
-                print(f"OSM download from {server} failed: {e}")
-                time.sleep(10 * (attempt + 1))
-        else:
-            print("Giving up on OSM; keeping the previous osm.js")
-            return
+    if not offline and not overpass(OSM_QUERY, raw_file):
+        print("Giving up on OSM; keeping the previous osm.js")
+        return
     elements = json.loads(raw_file.read_text())["elements"]
     out = []
     for e in elements:
@@ -301,6 +309,51 @@ def build_osm(offline=False):
     js += "window.OSM_PARKING = " + json.dumps(out, ensure_ascii=False, separators=(",", ":")) + ";\n"
     (HERE / "osm.js").write_text(js)
     print(f"osm car parks={len(out)} size={len(js) // 1024} KB")
+
+
+# ---------- Addresses (kommun's address register: exact points for search, and typo fixing) ----------
+
+ADDRESS_LAYER = "https://kartportal.uppsala.se/mapping/rest/services/aGenerell/Adresser/FeatureServer/0/query"
+ADDRESS_BBOX = (59.72, 17.45, 59.95, 17.85)  # same area as the OSM queries
+HOUSE_NUMBER = re.compile(r"^(.*?)\s+(\d+(?:\s*[A-Za-zÅÄÖåäö]{1,2})?)$")
+
+
+def build_addresses(offline=False):
+    raw_file = HERE / "addresses.geojson"
+    if not offline:
+        features = []
+        while True:  # the server returns at most 2000 per request
+            url = (ADDRESS_LAYER + "?where=1%3D1&outFields=Name,PostCity&outSR=4326&orderByFields=OBJECTID"
+                   f"&resultOffset={len(features)}&resultRecordCount=2000&f=geojson")
+            with urllib.request.urlopen(url, timeout=60) as r:
+                page = json.load(r)["features"]
+            features += page
+            if len(page) < 1000:
+                break
+        raw_file.write_text(json.dumps({"type": "FeatureCollection", "features": features}))
+    s, w, n, e = ADDRESS_BBOX
+    streets = {}
+    for f in json.loads(raw_file.read_text())["features"]:
+        lon, lat = f["geometry"]["coordinates"]
+        if not (s <= lat <= n and w <= lon <= e):
+            continue
+        name = " ".join(f["properties"]["Name"].split())
+        m = HOUSE_NUMBER.match(name)
+        street, number = (m.group(1), m.group(2).replace(" ", "").upper()) if m else (name, "")
+        streets.setdefault((street, f["properties"]["PostCity"]), []).append((number, lat, lon))
+    # [street, post town, [number, lat, lon, number, lat, lon, ...]]; coordinates as 1e-5 degree offsets to save space
+    out = []
+    for (street, town), addrs in sorted(streets.items()):
+        addrs.sort(key=lambda a: (int(re.match(r"\d*", a[0]).group() or 0), a[0]))
+        flat = []
+        for number, lat, lon in addrs:
+            flat += [number, round((lat - 59.7) * 1e5), round((lon - 17.4) * 1e5)]
+        out.append([street, town, flat])
+    js = "// Generated by build_data.py from Uppsala kommun's address register. Do not edit by hand.\n"
+    js += "// Coordinates: lat = 59.7 + y / 1e5, lon = 17.4 + x / 1e5\n"
+    js += "window.ADDRESSES = " + json.dumps(out, ensure_ascii=False, separators=(",", ":")) + ";\n"
+    (HERE / "addresses.js").write_text(js)
+    print(f"addresses={sum(len(a) for a in streets.values())} streets={len(streets)} size={len(js) // 1024} KB")
 
 
 if __name__ == "__main__":
