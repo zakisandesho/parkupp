@@ -132,14 +132,28 @@
   }
   setNow();
   $("nowBtn").addEventListener("click", () => { setNow(); render(); });
+  // Settings start folded into one line on phones; on a computer there's room to show them
+  if (!isPhone()) $("whenBox").open = true;
   $("fetched").textContent = K.fetched;
 
   let dest = null;
   let sortMode = "balance";
 
-  ["date", "time", "duration", "walk"].forEach((id) => $(id).addEventListener("change", render));
+  // "tors 8 okt · 14:30–16:30 · max 600 m", shown on the folded settings
+  function updateSummary() {
+    const start = new Date($("date").value + "T" + $("time").value);
+    if (isNaN(start)) return;
+    const end = new Date(start.getTime() + $("duration").value * 60000);
+    const day = start.toLocaleDateString("sv-SE", { weekday: "short", day: "numeric", month: "short" }).replace(/\.(?= |$)/g, "");
+    const dayNote = { sun: "sön- och helgdagsregler", sat: "lördagsregler", wd: "" }[Tariff.dayType(start)];
+    const walk = $("walk").selectedOptions[0].text.replace(/ \(.*/, "");
+    $("whenSummary").innerHTML = `<b>${esc(day)}</b> · ${pad(start.getHours())}:${pad(start.getMinutes())}–` +
+      `${pad(end.getHours())}:${pad(end.getMinutes())} · max ${esc(walk)}` + (dayNote ? ` <span class="day-note">(${dayNote})</span>` : "");
+  }
+  updateSummary();
+  ["date", "time", "duration", "walk"].forEach((id) => $(id).addEventListener("change", () => { updateSummary(); render(); }));
+  $("nowBtn").addEventListener("click", updateSummary);
   $("form").addEventListener("submit", (e) => { e.preventDefault(); search(); });
-  $("searchBtn").addEventListener("click", search);
 
   // ---------- destination search ----------
   // 1. Addresses: Uppsala kommun's address register (data/addresses.js), searched locally. Exact points for
@@ -318,8 +332,9 @@
 
   function setDest(lat, lon, label, shareName) {
     dest = { lat, lon, label };
-    $("dest").hidden = false;
-    $("dest").textContent = "📍 " + label;
+    $("q").value = label;
+    $("suggestions").style.display = "none";
+    document.body.classList.add("has-dest");
     render();
     map.setView([lat, lon], 16);
     // Put the destination in the address bar so the link can be shared
@@ -373,7 +388,11 @@
       cheapest: (a, b) => price(a) - price(b) || a.walkM - b.walkM,
       nearest: (a, b) => a.walkM - b.walkM || price(a) - price(b),
     }[sortMode];
-    return list.slice().sort(by).slice(0, MAX_RESULTS);
+    // The kommun often has two zones on one street (e.g. "Område D" and visitor parking): show it once
+    const seen = new Set();
+    return list.slice().sort(by)
+      .filter((p) => { const k = p.type + p.name + p.cost; return !seen.has(k) && seen.add(k); })
+      .slice(0, MAX_RESULTS);
   }
 
   function render() {
@@ -381,12 +400,7 @@
     const { ok, excluded, start, minutes } = evaluate();
     const list = sortResults(ok);
     const el = $("results");
-    const dayName = start.toLocaleDateString("sv-SE", { weekday: "long", day: "numeric", month: "short" });
-    const end = new Date(start.getTime() + minutes * 60000);
-    const dayNote = { sun: " (sön- och helgdagsregler)", sat: " (lördagsregler)", wd: "" }[Tariff.dayType(start)];
-
-    let html = `<p class="muted">${esc(dayName)} ${pad(start.getHours())}:${pad(start.getMinutes())}–${pad(end.getHours())}:${pad(end.getMinutes())}${dayNote}</p>`;
-    html += `<div class="tabs">
+    let html = `<div class="tabs">
       <button data-sort="balance" title="Pris + ${KR_PER_WALK_MIN} kr per gångminut">Bäst totalt</button>
       <button data-sort="cheapest">Billigast</button>
       <button data-sort="nearest">Närmast</button></div>`;
@@ -403,22 +417,28 @@
     list.forEach((p, i) => {
       const t = TYPES[p.type];
       const apps = p.operator ? OPS[p.operator].pay : [];
+      const directions = `https://www.google.com/maps/dir/?api=1&destination=${p.near.point[0]},${p.near.point[1]}`;
       html += `<div class="card" data-i="${i}">
         <div class="num" style="background:${t.color}">${i + 1}</div>
-        <div><div class="name">${esc(p.name)}<span class="badge" style="background:${t.color}">${t.label}</span></div>
-          <div class="sub">${esc(p.sub)}</div></div>
-        <div><div class="cost ${p.cost === 0 ? "free" : p.cost == null ? "unknown" : ""}">${costText(p)}</div>
-          <div class="walk">🚶 ${Math.round(p.walkM / 10) * 10} m · ${p.walkMin} min</div></div>
-        ${apps.length ? `<div class="apps">${apps.map((a) => `<span class="app-tag">${esc(a)}</span>`).join("")}</div>` : ""}
+        <div class="name">${esc(p.name)}</div>
+        <div class="cost ${p.cost === 0 ? "free" : p.cost == null ? "unknown" : ""}">${costText(p)}</div>
+        <div class="meta">
+          <span class="type" style="color:${t.color}"><span style="color:var(--muted)">${t.label}</span></span>
+          <span>🚶 ${p.walkMin} min · ${Math.round(p.walkM / 10) * 10} m</span>
+          ${p.limit ? `<span>⏱ ${esc(p.limit.text)}</span>` : ""}
+        </div>
         ${p.warnings.map((w) => `<div class="warn">⚠ ${esc(w)}</div>`).join("")}
         <div class="details">
           <p><b>Pris:</b> ${esc(p.priceText)}</p>
-          ${p.limit ? `<p><b>Tidsbegränsning:</b> ${esc(p.limit.text)}</p>` : ""}
+          ${apps.length ? `<p class="apps"><b>Betala med:</b> ${apps.map((a) => `<span class="app-tag">${esc(a)}</span>`).join("")}</p>` : ""}
           ${p.note ? `<p><b>Obs:</b> ${esc(p.note)}</p>` : ""}
           ${p.spaces ? `<p><b>Platser:</b> ca ${p.spaces}</p>` : ""}
+          <p class="sub">${esc(p.sub)}</p>
           ${p.source ? `<p><a href="${esc(p.source)}" target="_blank" rel="noopener">${esc(p.sourceLabel || "Operatörens sida")}</a>${p.checked ? " · kontrollerad " + esc(p.checked) : ""}</p>` : ""}
-          <p><a href="https://www.google.com/maps/dir/?api=1&destination=${p.near.point[0]},${p.near.point[1]}" target="_blank" rel="noopener">Vägbeskrivning</a></p>
-          <button type="button" class="map-btn primary">Visa på kartan</button>
+          <div class="actions">
+            <a class="btn" href="${directions}" target="_blank" rel="noopener">Vägbeskrivning</a>
+            <button type="button" class="map-btn">Visa på kartan</button>
+          </div>
         </div>
       </div>`;
     });
@@ -464,8 +484,9 @@
     if (!navigator.geolocation) { msg("Din webbläsare kan inte dela din position."); return; }
     msg("");
     btn.disabled = true;
-    btn.textContent = "📍 Hämtar position…";
-    const done = () => { btn.disabled = false; btn.textContent = "📍 Min position"; };
+    const icon = btn.innerHTML;
+    btn.textContent = "⏳";
+    const done = () => { btn.disabled = false; btn.innerHTML = icon; };
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         done();
