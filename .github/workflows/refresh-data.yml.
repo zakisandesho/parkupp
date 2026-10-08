@@ -21,6 +21,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/kommun.js data/osm.js data/addresses.js data/clinics.js
+          git add data/kommun.js data/osm.js data/addresses.js data/clinics.js data/places.js
           git diff --cached --quiet || git commit -m "Refresh kommun parking data"
           git push
