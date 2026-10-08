@@ -141,7 +141,94 @@
   $("form").addEventListener("submit", (e) => { e.preventDefault(); search(); });
   $("searchBtn").addEventListener("click", search);
 
-  // Photon (komoot) handles typos and business names well; Nominatim is the fallback.
+  // ---------- destination search ----------
+  // 1. Addresses: Uppsala kommun's address register (data/addresses.js), searched locally. Exact points for
+  //    every house number, and it forgives typos ("Krukmarkgatan 7" -> Krukmakargatan 7).
+  // 2. Places and businesses: Photon (komoot), with Nominatim as fallback. Both use OpenStreetMap.
+  const fold = (s) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9 ]/g, "");
+
+  let addressIndex = null;
+  let addressesLoading = null;
+  function loadAddresses() { // ~260 KB gzipped, so only fetched once someone starts searching
+    addressesLoading = addressesLoading || new Promise((resolve) => {
+      const s = document.createElement("script");
+      s.src = "data/addresses.js";
+      s.onload = () => {
+        addressIndex = (window.ADDRESSES || []).map(([name, town, flat]) => ({ name, town, flat, key: fold(name) }));
+        resolve();
+      };
+      s.onerror = () => { addressesLoading = null; resolve(); }; // search still works via Photon
+      document.head.appendChild(s);
+    });
+    return addressesLoading;
+  }
+  $("q").addEventListener("focus", loadAddresses);
+
+  // Edits needed to turn a into b; swapping two neighbouring letters counts as one edit
+  function editDistance(a, b, max) {
+    if (Math.abs(a.length - b.length) > max) return max + 1;
+    let before = [], prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) {
+      const cur = [i];
+      for (let j = 1; j <= b.length; j++) {
+        cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) cur[j] = Math.min(cur[j], before[j - 2] + 1);
+      }
+      before = prev;
+      prev = cur;
+    }
+    return prev[b.length];
+  }
+
+  function samePrefix(a, b) {
+    let i = 0;
+    while (i < a.length && a[i] === b[i]) i++;
+    return i;
+  }
+
+  // "krukmarkgatan 7b" -> [{ label: "Krukmakargatan 7B", lat, lon, hint: "Menade du?" }, ...]
+  function addressHits(q) {
+    if (!addressIndex) return [];
+    const m = q.replace(/,.*$/, "").match(/^(.*?)\s*(\d+\s*[a-zåäö]{0,2})?$/i);
+    const text = fold(m[1]).trim(), number = (m[2] || "").replace(/\s+/g, "").toUpperCase();
+    if (text.length < 3) return [];
+    const max = Math.min(3, Math.floor(text.length / 4));
+    const matches = [];
+    addressIndex.forEach((s) => {
+      // 0 = exact name, 1 = start of a name (still typing), 2+ = spelling mistakes
+      let score = s.key === text ? 0 : s.key.startsWith(text) ? 1 : null;
+      if (score === null && text.length >= 4) {
+        const d = editDistance(text, s.key, max);
+        if (d <= max) score = 1 + d;
+      }
+      if (score !== null) matches.push({ s, score, prefix: samePrefix(text, s.key) });
+    });
+    matches.sort((a, b) => a.score - b.score || b.prefix - a.prefix || (a.s.town !== "Uppsala") - (b.s.town !== "Uppsala"));
+    const good = matches.length ? matches[0].score + 1 : 0; // skip far-fetched spellings when a closer one exists
+    return matches.filter((x) => x.score <= good).slice(0, 4).map(({ s, score }) => {
+      const at = (i) => ({ lat: 59.7 + s.flat[i + 1] / 1e5, lon: 17.4 + s.flat[i + 2] / 1e5 });
+      let i = -1;
+      if (number) {
+        i = s.flat.findIndex((v, k) => k % 3 === 0 && v === number);
+        if (i < 0) { // no such number: take the closest one, preferring the same side of the street (odd/even)
+          let best = Infinity;
+          const want = parseInt(number, 10);
+          for (let k = 0; k < s.flat.length; k += 3) {
+            const n = parseInt(s.flat[k], 10);
+            const diff = Math.abs(n - want) + (n % 2 !== want % 2 ? 2.5 : 0);
+            if (diff < best) { best = diff; i = k; }
+          }
+        }
+      } else {
+        i = Math.floor(s.flat.length / 6) * 3; // a house in the middle of the street
+      }
+      const town = s.town === "Uppsala" ? "" : ", " + s.town;
+      const label = number ? s.name + " " + s.flat[i] + town : s.name + town;
+      const nearest = number && s.flat[i] !== number;
+      return { ...at(i), label, hint: score >= 2 ? "Menade du?" : nearest ? "närmaste adress" : "", exact: score === 0 };
+    });
+  }
+
   async function photon(q) {
     const url = "https://photon.komoot.io/api/?limit=6&bbox=17.45,59.72,17.85,59.95&lat=59.858&lon=17.639&q=" +
       encodeURIComponent(q);
@@ -152,7 +239,10 @@
       const street = [p.street, p.housenumber].filter(Boolean).join(" ");
       const label = [p.name, street, p.district || p.city].filter(Boolean)
         .filter((v, i, a) => a.indexOf(v) === i).join(", ");
-      return { lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0], label };
+      return {
+        lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0], label, street: p.type === "street",
+        address: !p.name && street ? fold(street) : null, // a bare address, no business or place name
+      };
     });
   }
 
@@ -169,16 +259,30 @@
     const ul = $("suggestions");
     if (q.length < 3) { ul.style.display = "none"; return; }
     const seq = ++searchSeq;
-    let hits = [];
-    try { hits = await photon(q); } catch (err) { /* fall through to Nominatim */ }
-    if (!hits.length) { try { hits = await nominatim(q); } catch (err) { /* handled below */ } }
+    const [places] = await Promise.all([
+      photon(q).catch(() => []).then((h) => h.length ? h : nominatim(q).catch(() => [])),
+      loadAddresses(),
+    ]);
     if (seq !== searchSeq) return; // a newer search has started
+    const addresses = addressHits(q);
+    // Our address points are more precise than Photon's whole-street results, so drop those
+    const ours = new Set(addresses.map((a) => fold(a.label)));
+    const others = places.filter((p) => !(addresses.length && p.street) && !ours.has(p.address));
+    // Looks like an address (or the name matches a street exactly) -> addresses first; otherwise places first
+    const addressFirst = /\d/.test(q) || addresses.some((a) => a.exact);
+    const hits = (addressFirst ? addresses.concat(others) : others.concat(addresses)).slice(0, 8);
     ul.style.display = "block";
-    if (!hits.length) { ul.innerHTML = "<li>Inga träffar i Uppsala. Prova ett annat namn, eller tryck på kartan.</li>"; return; }
+    if (!hits.length) { ul.innerHTML = "<li>Inga träffar i Uppsala. Prova en gatuadress i närheten, eller tryck på kartan.</li>"; return; }
     ul.innerHTML = "";
     hits.forEach((h) => {
       const li = document.createElement("li");
       li.textContent = h.label;
+      if (h.hint) {
+        const hint = document.createElement("span");
+        hint.className = "hint";
+        hint.textContent = " · " + h.hint;
+        li.appendChild(hint);
+      }
       li.onclick = () => { ul.style.display = "none"; $("q").value = h.label; setDest(h.lat, h.lon, h.label); };
       ul.appendChild(li);
     });
