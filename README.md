@@ -16,8 +16,10 @@ with the total price and which app to pay with.
 - **Destination search** looks up addresses in Uppsala kommun's address register (`data/addresses.js`,
   searched in the browser, so typos like "Krukmarkgatan" still find Krukmakargatan). Clinics and other
   healthcare units come from a monthly snapshot of 1177 Hitta vård (`data/clinics.js`, with the hospital
-  entrance where 1177 lists one). Other places and businesses come from Photon (komoot), falling back to
-  Nominatim. Map tiles are from OpenStreetMap.
+  entrance where 1177 lists one). Named places (hotels, shops, schools…) come from a monthly OpenStreetMap
+  snapshot (`data/places.js`). All of these are searched in the browser, so results show instantly; Photon
+  (komoot) adds anything else when it answers, with Nominatim as a fallback when you press Enter.
+  Map tiles are from OpenStreetMap.
 - **Other car parks** come from OpenStreetMap (`data/osm.js`), shown with a "check the sign" warning.
 
 Prices are estimates. Always check the sign on site.
@@ -34,7 +36,7 @@ Opening `index.html` directly as a file won't work: OpenStreetMap blocks map til
 ## Update data
 
 ```sh
-python3 data/build_data.py            # download fresh data; rebuilds kommun.js, osm.js, addresses.js and clinics.js
+python3 data/build_data.py            # download fresh data; rebuilds kommun.js, osm.js, addresses.js, clinics.js and places.js
 python3 data/build_data.py --offline  # rebuild from already-downloaded files
 ```
 

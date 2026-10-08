@@ -153,21 +153,24 @@
   updateSummary();
   ["date", "time", "duration", "walk"].forEach((id) => $(id).addEventListener("change", () => { updateSummary(); render(); }));
   $("nowBtn").addEventListener("click", updateSummary);
-  $("form").addEventListener("submit", (e) => { e.preventDefault(); search(); });
+  $("form").addEventListener("submit", (e) => { e.preventDefault(); clearTimeout(typingTimer); search(true); });
 
   // ---------- destination search ----------
   // 1. Addresses: Uppsala kommun's address register (data/addresses.js), searched locally. Exact points for
   //    every house number, and it forgives typos ("Krukmarkgatan 7" -> Krukmakargatan 7).
   // 2. Clinics: 1177 Hitta vård (data/clinics.js), also searched locally. Exact building and entrance.
-  // 3. Places and businesses: Photon (komoot), with Nominatim as fallback. Both use OpenStreetMap.
+  // 3. Named places from OpenStreetMap (data/places.js): hotels, shops, schools... also local, so instant.
+  // 4. Anything else: Photon (komoot), with Nominatim as fallback. Both online and sometimes slow.
   const fold = (s) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9 ]/g, "");
 
   let addressIndex = null;
   let clinicIndex = null;
+  let placeIndex = null;
+  const version = new URL(document.currentScript.src).search; // "?v=..." from index.html, reused for the lazy files
   function loadScript(src) {
     return new Promise((resolve) => {
       const s = document.createElement("script");
-      s.src = src;
+      s.src = src + version;
       s.onload = resolve;
       s.onerror = resolve; // search still works via Photon
       document.head.appendChild(s);
@@ -175,16 +178,20 @@
   }
   let localLoading = null;
   function loadLocalData() { // ~280 KB gzipped, so only fetched once someone starts searching
-    localLoading = localLoading || Promise.all([loadScript("data/addresses.js"), loadScript("data/clinics.js")]).then(() => {
+    localLoading = localLoading || Promise.all(["addresses", "clinics", "places"].map((f) => loadScript(`data/${f}.js`))).then(() => {
       addressIndex = (window.ADDRESSES || []).map(([name, town, flat]) => ({ name, town, flat, key: fold(name) }));
-      clinicIndex = (window.CLINICS || []).map(([name, address, y, x]) => ({
-        name, address, lat: 59.7 + y / 1e5, lon: 17.4 + x / 1e5, words: fold(name).split(" ").filter(Boolean),
-      }));
-      if (!window.ADDRESSES || !window.CLINICS) localLoading = null; // try again on the next search
+      const named = ([name, hint, y, x]) => ({
+        name, hint, key: fold(name), words: fold(name).split(" ").filter(Boolean), lat: 59.7 + y / 1e5, lon: 17.4 + x / 1e5,
+      });
+      clinicIndex = (window.CLINICS || []).map(named);
+      placeIndex = (window.PLACES || []).map(named);
+      if (!window.ADDRESSES || !window.CLINICS || !window.PLACES) localLoading = null; // try again on the next search
     });
     return localLoading;
   }
   $("q").addEventListener("focus", loadLocalData);
+  // Fetch them in the background as soon as the page is ready, so the first search is instant too
+  window.addEventListener("load", () => setTimeout(loadLocalData, 300));
 
   // Edits needed to turn a into b; swapping two neighbouring letters counts as one edit
   function editDistance(a, b, max) {
@@ -252,25 +259,36 @@
   }
 
   // "affektiva" -> Affektiv mottagning 2, Akademiska sjukhuset, Ingång 10. Every typed word has to match
-  // the start of a word in the clinic's name (or be that word with a short ending, like affektiv-a).
-  function clinicHits(q) {
-    if (!clinicIndex) return [];
-    const typed = fold(q).split(" ").filter((t) => t.length >= 2 || /\d/.test(t));
+  // the start of a word in the name, be that word with a short ending (affektiv-a), or be one letter off
+  // (botaniska -> Botanika).
+  function nameHits(index, q, max) {
+    if (!index) return [];
+    const text = fold(q).trim();
+    const typed = text.split(" ").filter((t) => t.length >= 2 || /\d/.test(t));
     if (!typed.length || typed.join("").length < 3) return [];
-    const fits = (t, w) => w.startsWith(t) || (w.length >= 5 && t.startsWith(w) && t.length - w.length <= 2);
-    return clinicIndex
+    const fits = (t, w) => w.startsWith(t) || (w.length >= 5 && t.startsWith(w) && t.length - w.length <= 2) ||
+      (t.length >= 5 && editDistance(t, w, 1) <= 1);
+    return index
       .filter((c) => typed.every((t) => c.words.some((w) => fits(t, w))))
-      .sort((a, b) => a.name.length - b.name.length) // the plainest name first
-      .slice(0, 4)
-      .map((c) => ({ lat: c.lat, lon: c.lon, label: c.name, hint: c.address || "1177" }));
+      // names that start with what you typed first, then the plainest (shortest) name
+      .sort((a, b) => !a.key.startsWith(text) - !b.key.startsWith(text) || a.name.length - b.name.length)
+      .slice(0, max)
+      .map((c) => ({ lat: c.lat, lon: c.lon, label: c.name, hint: c.hint, key: c.key }));
   }
 
+  // Photon can take several seconds, so answers are remembered and outdated requests are cancelled
+  const photonCache = new Map();
+  let photonAbort = null;
   async function photon(q) {
+    if (photonCache.has(q)) return photonCache.get(q);
+    if (photonAbort) photonAbort.abort();
+    const abort = photonAbort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), 8000);
     const url = "https://photon.komoot.io/api/?limit=6&bbox=17.45,59.72,17.85,59.95&lat=59.858&lon=17.639&q=" +
       encodeURIComponent(q);
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: abort.signal }).finally(() => clearTimeout(timer));
     const data = await res.json();
-    return data.features.map((f) => {
+    const hits = data.features.map((f) => {
       const p = f.properties;
       const street = [p.street, p.housenumber].filter(Boolean).join(" ");
       const label = [p.name, street, p.district || p.city].filter(Boolean)
@@ -280,6 +298,8 @@
         address: !p.name && street ? fold(street) : null, // a bare address, no business or place name
       };
     });
+    photonCache.set(q, hits);
+    return hits;
   }
 
   async function nominatim(q) {
@@ -289,29 +309,45 @@
     return (await res.json()).map((h) => ({ lat: +h.lat, lon: +h.lon, label: h.display_name.split(",").slice(0, 3).join(",") }));
   }
 
+  // Local results (addresses, clinics) show at once; Photon's places are added when they arrive.
+  // Nominatim only runs when you press Enter: its usage policy doesn't allow search-as-you-type.
   let searchSeq = 0;
-  async function search() {
+  async function search(submitted) {
     const q = $("q").value.trim();
     const ul = $("suggestions");
     if (q.length < 3) { ul.style.display = "none"; return; }
     const seq = ++searchSeq;
-    const [places] = await Promise.all([
-      photon(q).catch(() => []).then((h) => h.length ? h : nominatim(q).catch(() => [])),
-      loadLocalData(),
-    ]);
+    await loadLocalData();
     if (seq !== searchSeq) return; // a newer search has started
-    const addresses = addressHits(q);
-    const clinics = clinicHits(q);
-    // Our address points are more precise than Photon's whole-street results, so drop those
-    const ours = new Set(addresses.map((a) => fold(a.label)));
-    const others = places.filter((p) => !(addresses.length && p.street) && !ours.has(p.address));
+    const local = {
+      addresses: addressHits(q),
+      clinics: nameHits(clinicIndex, q, 4).map((c) => ({ ...c, hint: c.hint || "1177" })),
+      places: nameHits(placeIndex, q, 4),
+    };
+    showHits(q, local, photonCache.get(q) || null);
+    if (photonCache.has(q)) return;
+    let online = await photon(q).catch(() => []);
+    const found = local.addresses.length + local.clinics.length + local.places.length;
+    if (!online.length && submitted && !found) online = await nominatim(q).catch(() => []);
+    if (seq !== searchSeq) return;
+    showHits(q, local, online);
+  }
+
+  // online = null while Photon is still searching
+  function showHits(q, local, online) {
+    const ul = $("suggestions");
+    const { addresses, clinics, places } = local;
+    // Drop Photon results we already have: whole streets (our address points are more precise),
+    // bare addresses we list, and places with the same name as a local one
+    const ours = new Set([...addresses.map((a) => fold(a.label)), ...places.map((p) => p.key)]);
+    const others = (online || []).filter((p) =>
+      !(addresses.length && p.street) && !ours.has(p.address) && !ours.has(fold(p.label.split(",")[0])));
     // Looks like an address (or the name matches a street exactly) -> addresses first; otherwise places first
     const addressFirst = /\d/.test(q) || addresses.some((a) => a.exact);
     const hits = (addressFirst
-      ? [...addresses, ...clinics, ...others]
-      : [...others.slice(0, 3), ...clinics, ...others.slice(3), ...addresses]).slice(0, 8);
+      ? [...addresses, ...places, ...clinics, ...others]
+      : [...places, ...clinics, ...others, ...addresses]).slice(0, 8);
     ul.style.display = "block";
-    if (!hits.length) { ul.innerHTML = "<li>Inga träffar i Uppsala. Prova en gatuadress i närheten, eller tryck på kartan.</li>"; return; }
     ul.innerHTML = "";
     hits.forEach((h) => {
       const li = document.createElement("li");
@@ -325,10 +361,16 @@
       li.onclick = () => { ul.style.display = "none"; $("q").value = h.label; setDest(h.lat, h.lon, h.label); };
       ul.appendChild(li);
     });
+    if (!online || !hits.length) {
+      const li = document.createElement("li");
+      li.className = "status";
+      li.textContent = !online ? "Söker fler platser…" : "Inga träffar i Uppsala. Prova en gatuadress i närheten, eller tryck på kartan.";
+      ul.appendChild(li);
+    }
   }
 
   let typingTimer;
-  $("q").addEventListener("input", () => { clearTimeout(typingTimer); typingTimer = setTimeout(search, 350); });
+  $("q").addEventListener("input", () => { clearTimeout(typingTimer); typingTimer = setTimeout(search, 250); });
 
   function setDest(lat, lon, label, shareName) {
     dest = { lat, lon, label };

@@ -57,6 +57,7 @@
     #suggestions { list-style: none; margin: 0; padding: 4px 0; border: 1px solid var(--line); border-radius: 10px; display: none; background: var(--raised); box-shadow: var(--shadow); }
     #suggestions li { padding: 8px 12px; cursor: pointer; font-size: 14px; }
     #suggestions li:hover { background: var(--accent-soft); }
+    #suggestions li.status { color: var(--muted); font-size: 13px; cursor: default; background: none; }
     #suggestions .hint { margin: 0; }
     .loc-msg { margin: 0; font-size: 13px; color: var(--warn); }
     /* Time and walking distance: a one-line summary that opens into the fields */
@@ -186,10 +187,11 @@
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-  <script src="tariff.js"></script>
-  <script src="data/kommun.js"></script>
-  <script src="data/carparks.js"></script>
-  <script src="data/osm.js"></script>
-  <script src="app.js"></script>
+  <!-- Bump ?v= on every upload so phones never mix an old cached script with a new page -->
+  <script src="tariff.js?v=2026-10-08d"></script>
+  <script src="data/kommun.js?v=2026-10-08d"></script>
+  <script src="data/carparks.js?v=2026-10-08d"></script>
+  <script src="data/osm.js?v=2026-10-08d"></script>
+  <script src="app.js?v=2026-10-08d"></script>
 </body>
 </html>
