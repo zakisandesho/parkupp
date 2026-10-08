@@ -55,6 +55,12 @@
       background: var(--field) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23889' stroke-width='2'%3E%3Ccircle cx='7' cy='7' r='5'/%3E%3Cpath d='m11 11 4 4'/%3E%3C/svg%3E") no-repeat 12px 50%; }
     .search button { width: 44px; padding: 0; flex: none; display: grid; place-items: center; color: var(--accent); }
     .search button svg { width: 20px; height: 20px; }
+    .search .field { flex: 1; min-width: 0; position: relative; }
+    .search .field input { width: 100%; padding-right: 40px; }
+    .search .clear { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 32px; height: 32px;
+      background: none; border: 0; box-shadow: none; color: var(--muted); }
+    .search .clear svg { width: 16px; height: 16px; }
+    #q:placeholder-shown + .clear { display: none; }
     .hint { font-size: 12px; color: var(--muted); }
     .pick-hint { margin: -4px 0 0; }
     .has-dest .pick-hint { display: none; }
@@ -111,6 +117,7 @@
     .actions button { background: var(--panel); }
     .map-btn { display: none; }
     .muted { color: var(--muted); font-size: 13px; }
+    .disclaimer { margin: 10px 0 0; padding-top: 10px; border-top: 1px solid var(--line); }
     footer a, .details a:not(.btn) { color: var(--accent); }
     @media (max-width: 800px) {
       /* Phone: search -> map -> results, one scrolling column */
@@ -143,7 +150,10 @@
 
       <form id="form">
         <div class="search">
-          <input id="q" placeholder="Adress, plats eller mottagning" autocomplete="off" aria-label="Vart ska du?" enterkeyhint="search">
+          <div class="field">
+            <input id="q" placeholder="Adress, plats eller mottagning" autocomplete="off" aria-label="Vart ska du?" enterkeyhint="search">
+            <button type="button" id="clearBtn" class="clear" title="Rensa sökningen" aria-label="Rensa sökningen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M7 7l10 10M17 7 7 17"/></svg></button>
+          </div>
           <button type="button" id="locBtn" title="Använd min position" aria-label="Använd min position"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
         </div>
         <ul id="suggestions"></ul>
@@ -185,6 +195,9 @@
         Gatuparkering och kommunens parkeringar: <a href="https://www.uppsala.se/gator-trafik-och-resor/parkera-din-cykel-bil-eller-andra-fordon/parkeringskartan/" target="_blank" rel="noopener">Uppsala kommuns parkeringskarta</a>, data hämtad <span id="fetched"></span>.
         Privata parkeringar är inmatade för hand från operatörernas webbplatser. Priserna är uppskattningar – kontrollera alltid skylten på plats.
         Gångavstånd är fågelvägen × 1,25. Karta © OpenStreetMap-bidragsgivare.
+        <p class="disclaimer"><b>Ansvarsfriskrivning:</b> ParkUpp är ett privat hobbyprojekt och informationen är endast vägledande.
+        Priser, tider och regler kan vara felaktiga eller inaktuella. Det är alltid skyltningen på plats som gäller.
+        Vi tar inget ansvar för parkeringsavgifter, kontrollavgifter (p-böter), bärgning eller andra kostnader som uppstår när du använder tjänsten.</p>
       </footer>
     </aside>
     <div id="map"></div>
@@ -192,10 +205,10 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <!-- Bump ?v= on every upload so phones never mix an old cached script with a new page -->
-  <script src="tariff.js?v=2026-10-08e"></script>
-  <script src="data/kommun.js?v=2026-10-08e"></script>
-  <script src="data/carparks.js?v=2026-10-08e"></script>
-  <script src="data/osm.js?v=2026-10-08e"></script>
-  <script src="app.js?v=2026-10-08e"></script>
+  <script src="tariff.js?v=2026-10-08f"></script>
+  <script src="data/kommun.js?v=2026-10-08f"></script>
+  <script src="data/carparks.js?v=2026-10-08f"></script>
+  <script src="data/osm.js?v=2026-10-08f"></script>
+  <script src="app.js?v=2026-10-08f"></script>
 </body>
 </html>

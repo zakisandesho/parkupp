@@ -386,6 +386,12 @@
   }
 
   let typingTimer;
+  $("clearBtn").addEventListener("click", () => {
+    clearTimeout(typingTimer);
+    $("q").value = "";
+    $("suggestions").style.display = "none";
+    $("q").focus();
+  });
   $("q").addEventListener("input", () => { clearTimeout(typingTimer); typingTimer = setTimeout(search, 250); });
 
   function setDest(lat, lon, label, shareName) {
