@@ -11,6 +11,7 @@
     kommunlot: { label: "Kommunal parkering", color: "var(--kommunlot)", hex: "#8250df" },
     private: { label: "Privat parkering", color: "var(--private)", hex: "#d1242f" },
     free: { label: "Gratis gatuparkering", color: "var(--free)", hex: "#1a7f37" },
+    osm: { label: "Övrig parkering", color: "var(--osm)", hex: "#6e7781" },
   };
 
   // Opening hours for kommun garages (from uppsalaparkering.se), keyed by area code
@@ -50,6 +51,34 @@
       source: c.source, checked: c.checked, approx: c.approx,
     });
   });
+
+  // OpenStreetMap car parks fill the gaps (suburbs, shopping centres). Prices are mostly unknown,
+  // so they're shown with a warning and sorted after places with a known price.
+  const OSM_KINDS = { surface: "Markparkering", "multi-storey": "Parkeringshus", underground: "Garage", rooftop: "Takparkering" };
+  const known = places.filter((p) => p.point).map((p) => p.point);
+  (window.OSM_PARKING || []).forEach((o) => {
+    const point = [o.lat, o.lon];
+    if (known.some((k) => distM(k, point) < 60)) return; // already listed with better data
+    const sub = [OSM_KINDS[o.t] || "Parkering", o.c && "ca " + o.c + " platser", o.o].filter(Boolean).join(" · ");
+    const maxMin = parseMaxstay(o.m);
+    places.push({
+      type: "osm", name: o.n || "Parkering", sub, point, tariff: { rules: [] }, unknownPrice: o.f !== "no",
+      priceText: o.f === "no" ? "Gratis enligt OpenStreetMap" : o.f === "yes" ? "Avgift – pris okänt" : "Okänt om det kostar",
+      limit: maxMin ? { maxMin, text: "max " + Tariff.formatDuration(maxMin) } : null,
+      note: o.a === "customers" ? "Endast för kunder (t.ex. butikens besökare)" : null,
+      source: "https://www.openstreetmap.org/" + { n: "node", w: "way", r: "relation" }[o.id[0]] + "/" + o.id.slice(1),
+      sourceLabel: "Se på OpenStreetMap", osm: true,
+    });
+  });
+
+  // OSM maxstay like "2 hours", "90 min", "3h", "1 day" -> minutes
+  function parseMaxstay(v) {
+    const m = /^(\d+(?:[.,]\d+)?)\s*(h|hours?|tim\w*|min\w*|days?|dygn)?$/i.exec((v || "").trim());
+    if (!m) return null;
+    const n = parseFloat(m[1].replace(",", "."));
+    const unit = (m[2] || "min").toLowerCase();
+    return Math.round(unit.startsWith("h") || unit.startsWith("t") ? n * 60 : unit.startsWith("d") ? n * 1440 : n);
+  }
 
   // ---------- helpers ----------
   function distM(a, b) {
@@ -180,18 +209,20 @@
     const maxWalk = +$("walk").value;
     const here = [dest.lat, dest.lon];
     const ok = [];
-    let excluded = 0;
+    const excluded = [];
     places.forEach((p) => {
       const near = nearestPoint(p, here);
       const walkM = near.d * WALK_FACTOR;
       if (walkM > maxWalk) return;
       const r = Tariff.calculate(p.tariff, start, minutes, p.limit);
-      if (!r.allowed) { excluded++; return; }
+      if (!r.allowed) { excluded.push({ name: p.name, reason: r.reasons[0], walkM }); return; }
       const warnings = [];
       if (p.open && Tariff.overlaps(invert(p.open), start, minutes)) warnings.push("Stängt under en del av din vistelse – kolla öppettiderna");
       if (p.assumed) warnings.push("Skylten anger inga dagar; priset räknar med alla dagar");
       if (p.approx) warnings.push("Positionen på kartan är ungefärlig");
-      ok.push({ ...p, near, walkM, walkMin: Math.max(1, Math.round(walkM / WALK_M_PER_MIN)), cost: r.cost, warnings });
+      if (p.osm) warnings.push("Uppgifter från OpenStreetMap – kontrollera skylten på plats");
+      const cost = p.unknownPrice ? null : r.cost;
+      ok.push({ ...p, near, walkM, walkMin: Math.max(1, Math.round(walkM / WALK_M_PER_MIN)), cost, warnings });
     });
     return { ok, excluded, start, minutes };
   }
@@ -201,11 +232,17 @@
     return open.map((w) => ({ days: w.days, from: w.to, to: w.from }));
   }
 
+  function costText(p) {
+    return p.cost == null ? "Pris ?" : p.cost === 0 ? "Gratis" : p.cost + " kr";
+  }
+
   function sortResults(list) {
+    // Unknown prices sort after every known price
+    const price = (p) => (p.cost == null ? 1e6 : p.cost);
     const by = {
-      balance: (a, b) => a.cost + a.walkMin * KR_PER_WALK_MIN - (b.cost + b.walkMin * KR_PER_WALK_MIN) || a.walkM - b.walkM,
-      cheapest: (a, b) => a.cost - b.cost || a.walkM - b.walkM,
-      nearest: (a, b) => a.walkM - b.walkM || a.cost - b.cost,
+      balance: (a, b) => price(a) + a.walkMin * KR_PER_WALK_MIN - (price(b) + b.walkMin * KR_PER_WALK_MIN) || a.walkM - b.walkM,
+      cheapest: (a, b) => price(a) - price(b) || a.walkM - b.walkM,
+      nearest: (a, b) => a.walkM - b.walkM || price(a) - price(b),
     }[sortMode];
     return list.slice().sort(by).slice(0, MAX_RESULTS);
   }
@@ -224,8 +261,15 @@
       <button data-sort="balance" title="Pris + ${KR_PER_WALK_MIN} kr per gångminut">Bäst totalt</button>
       <button data-sort="cheapest">Billigast</button>
       <button data-sort="nearest">Närmast</button></div>`;
+    // Explain hidden places (e.g. 30-minute streets when you stay 2 hours) instead of a bare "nothing found"
+    const nearestHidden = excluded.slice().sort((a, b) => a.walkM - b.walkM)[0];
+    const hiddenText = excluded.length
+      ? `${excluded.length} ${excluded.length > 1 ? "platser" : "plats"} i närheten har kortare tidsgräns än din vistelse ` +
+        `(t.ex. ${esc(nearestHidden.name)}: ${esc(nearestHidden.reason.replace(/^Tidsbegränsning: /, ""))}).`
+      : "";
     if (!list.length) {
-      html += `<p class="muted">Inget hittades inom det här gångavståndet. Prova ett längre maxavstånd.</p>`;
+      html += `<p class="muted">Inget passar inom ${+$("walk").value} m. ` +
+        (excluded.length ? hiddenText + " Välj kortare tid eller längre gångavstånd." : "Prova ett längre maxavstånd.") + "</p>";
     }
     list.forEach((p, i) => {
       const t = TYPES[p.type];
@@ -234,7 +278,7 @@
         <div class="num" style="background:${t.color}">${i + 1}</div>
         <div><div class="name">${esc(p.name)}<span class="badge" style="background:${t.color}">${t.label}</span></div>
           <div class="sub">${esc(p.sub)}</div></div>
-        <div><div class="cost ${p.cost === 0 ? "free" : ""}">${p.cost === 0 ? "Gratis" : p.cost + " kr"}</div>
+        <div><div class="cost ${p.cost === 0 ? "free" : p.cost == null ? "unknown" : ""}">${costText(p)}</div>
           <div class="walk">🚶 ${Math.round(p.walkM / 10) * 10} m · ${p.walkMin} min</div></div>
         ${apps.length ? `<div class="apps">${apps.map((a) => `<span class="app-tag">${esc(a)}</span>`).join("")}</div>` : ""}
         ${p.warnings.map((w) => `<div class="warn">⚠ ${esc(w)}</div>`).join("")}
@@ -243,15 +287,13 @@
           ${p.limit ? `<p><b>Tidsbegränsning:</b> ${esc(p.limit.text)}</p>` : ""}
           ${p.note ? `<p><b>Obs:</b> ${esc(p.note)}</p>` : ""}
           ${p.spaces ? `<p><b>Platser:</b> ca ${p.spaces}</p>` : ""}
-          ${p.source ? `<p><a href="${esc(p.source)}" target="_blank" rel="noopener">Operatörens sida</a> · kontrollerad ${esc(p.checked)}</p>` : ""}
+          ${p.source ? `<p><a href="${esc(p.source)}" target="_blank" rel="noopener">${esc(p.sourceLabel || "Operatörens sida")}</a>${p.checked ? " · kontrollerad " + esc(p.checked) : ""}</p>` : ""}
           <p><a href="https://www.google.com/maps/dir/?api=1&destination=${p.near.point[0]},${p.near.point[1]}" target="_blank" rel="noopener">Vägbeskrivning</a></p>
           <button type="button" class="map-btn primary">Visa på kartan</button>
         </div>
       </div>`;
     });
-    if (excluded) {
-      html += `<p class="muted">${excluded} alternativ i närheten dolda eftersom din vistelse är längre än tidsbegränsningen.</p>`;
-    }
+    if (list.length && excluded.length) html += `<p class="muted">Dolda: ${hiddenText}</p>`;
     el.innerHTML = html;
     el.querySelectorAll(".tabs button").forEach((b) => {
       b.classList.toggle("active", b.dataset.sort === sortMode);
@@ -340,7 +382,7 @@
         iconSize: [28, 28], iconAnchor: [14, 14],
       });
       const m = L.marker(p.near.point, { icon }).addTo(layer)
-        .bindPopup(`<b>${esc(p.name)}</b><br>${p.cost === 0 ? "Gratis" : p.cost + " kr"} · ${p.walkMin} min promenad`);
+        .bindPopup(`<b>${esc(p.name)}</b><br>${costText(p)} · ${p.walkMin} min promenad`);
       m.on("click", () => showCard(i));
       markers.push(m);
     });

@@ -13,7 +13,7 @@
     :root {
       --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #5d6676; --line: #e1e4ea;
       --accent: #1f6feb; --accent-soft: #e6efff; --good: #1a7f37; --warn: #9a6700; --bad: #c62828;
-      --street: #1f6feb; --kommunlot: #8250df; --private: #d1242f; --free: #1a7f37;
+      --street: #1f6feb; --kommunlot: #8250df; --private: #d1242f; --free: #1a7f37; --osm: #6e7781;
     }
     @media (prefers-color-scheme: dark) {
       :root:not([data-theme="light"]) {
@@ -59,6 +59,7 @@
     .sub { font-size: 13px; color: var(--muted); }
     .cost { font-size: 20px; font-weight: 700; text-align: right; white-space: nowrap; }
     .cost.free { color: var(--good); }
+    .cost.unknown { color: var(--muted); font-size: 16px; }
     .walk { font-size: 13px; color: var(--muted); text-align: right; white-space: nowrap; }
     .details { grid-column: 2 / 4; font-size: 13px; display: none; }
     .card.open .details { display: block; }
@@ -153,6 +154,7 @@
   <script src="tariff.js"></script>
   <script src="data/kommun.js"></script>
   <script src="data/carparks.js"></script>
+  <script src="data/osm.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
