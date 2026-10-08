@@ -116,6 +116,22 @@
 
   map.on("click", (e) => setDest(e.latlng.lat, e.latlng.lng, "Punkt på kartan"));
 
+  // On touch screens one finger scrolls the page and two fingers move/zoom the map
+  // (Leaflet's pinch also pans), so scrolling past the map doesn't drag it around
+  if (window.matchMedia("(pointer: coarse)").matches) {
+    map.dragging.disable();
+    const box = map.getContainer();
+    const tip = L.DomUtil.create("div", "map-tip", box);
+    tip.textContent = "Använd två fingrar för att flytta kartan";
+    let tipTimer;
+    box.addEventListener("touchmove", (e) => {
+      if (e.touches.length !== 1) return tip.classList.remove("show");
+      tip.classList.add("show");
+      clearTimeout(tipTimer);
+      tipTimer = setTimeout(() => tip.classList.remove("show"), 1200);
+    }, { passive: true });
+  }
+
   // ---------- form ----------
   const $ = (id) => document.getElementById(id);
   // A plain dropdown instead of <input type="time">: the native time picker doesn't open on some Android phones
