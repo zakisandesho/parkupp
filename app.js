@@ -144,25 +144,33 @@
   // ---------- destination search ----------
   // 1. Addresses: Uppsala kommun's address register (data/addresses.js), searched locally. Exact points for
   //    every house number, and it forgives typos ("Krukmarkgatan 7" -> Krukmakargatan 7).
-  // 2. Places and businesses: Photon (komoot), with Nominatim as fallback. Both use OpenStreetMap.
+  // 2. Clinics: 1177 Hitta vård (data/clinics.js), also searched locally. Exact building and entrance.
+  // 3. Places and businesses: Photon (komoot), with Nominatim as fallback. Both use OpenStreetMap.
   const fold = (s) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9 ]/g, "");
 
   let addressIndex = null;
-  let addressesLoading = null;
-  function loadAddresses() { // ~260 KB gzipped, so only fetched once someone starts searching
-    addressesLoading = addressesLoading || new Promise((resolve) => {
+  let clinicIndex = null;
+  function loadScript(src) {
+    return new Promise((resolve) => {
       const s = document.createElement("script");
-      s.src = "data/addresses.js";
-      s.onload = () => {
-        addressIndex = (window.ADDRESSES || []).map(([name, town, flat]) => ({ name, town, flat, key: fold(name) }));
-        resolve();
-      };
-      s.onerror = () => { addressesLoading = null; resolve(); }; // search still works via Photon
+      s.src = src;
+      s.onload = resolve;
+      s.onerror = resolve; // search still works via Photon
       document.head.appendChild(s);
     });
-    return addressesLoading;
   }
-  $("q").addEventListener("focus", loadAddresses);
+  let localLoading = null;
+  function loadLocalData() { // ~280 KB gzipped, so only fetched once someone starts searching
+    localLoading = localLoading || Promise.all([loadScript("data/addresses.js"), loadScript("data/clinics.js")]).then(() => {
+      addressIndex = (window.ADDRESSES || []).map(([name, town, flat]) => ({ name, town, flat, key: fold(name) }));
+      clinicIndex = (window.CLINICS || []).map(([name, address, y, x]) => ({
+        name, address, lat: 59.7 + y / 1e5, lon: 17.4 + x / 1e5, words: fold(name).split(" ").filter(Boolean),
+      }));
+      if (!window.ADDRESSES || !window.CLINICS) localLoading = null; // try again on the next search
+    });
+    return localLoading;
+  }
+  $("q").addEventListener("focus", loadLocalData);
 
   // Edits needed to turn a into b; swapping two neighbouring letters counts as one edit
   function editDistance(a, b, max) {
@@ -229,6 +237,20 @@
     });
   }
 
+  // "affektiva" -> Affektiv mottagning 2, Akademiska sjukhuset, Ingång 10. Every typed word has to match
+  // the start of a word in the clinic's name (or be that word with a short ending, like affektiv-a).
+  function clinicHits(q) {
+    if (!clinicIndex) return [];
+    const typed = fold(q).split(" ").filter((t) => t.length >= 2 || /\d/.test(t));
+    if (!typed.length || typed.join("").length < 3) return [];
+    const fits = (t, w) => w.startsWith(t) || (w.length >= 5 && t.startsWith(w) && t.length - w.length <= 2);
+    return clinicIndex
+      .filter((c) => typed.every((t) => c.words.some((w) => fits(t, w))))
+      .sort((a, b) => a.name.length - b.name.length) // the plainest name first
+      .slice(0, 4)
+      .map((c) => ({ lat: c.lat, lon: c.lon, label: c.name, hint: c.address || "1177" }));
+  }
+
   async function photon(q) {
     const url = "https://photon.komoot.io/api/?limit=6&bbox=17.45,59.72,17.85,59.95&lat=59.858&lon=17.639&q=" +
       encodeURIComponent(q);
@@ -261,16 +283,19 @@
     const seq = ++searchSeq;
     const [places] = await Promise.all([
       photon(q).catch(() => []).then((h) => h.length ? h : nominatim(q).catch(() => [])),
-      loadAddresses(),
+      loadLocalData(),
     ]);
     if (seq !== searchSeq) return; // a newer search has started
     const addresses = addressHits(q);
+    const clinics = clinicHits(q);
     // Our address points are more precise than Photon's whole-street results, so drop those
     const ours = new Set(addresses.map((a) => fold(a.label)));
     const others = places.filter((p) => !(addresses.length && p.street) && !ours.has(p.address));
     // Looks like an address (or the name matches a street exactly) -> addresses first; otherwise places first
     const addressFirst = /\d/.test(q) || addresses.some((a) => a.exact);
-    const hits = (addressFirst ? addresses.concat(others) : others.concat(addresses)).slice(0, 8);
+    const hits = (addressFirst
+      ? [...addresses, ...clinics, ...others]
+      : [...others.slice(0, 3), ...clinics, ...others.slice(3), ...addresses]).slice(0, 8);
     ul.style.display = "block";
     if (!hits.length) { ul.innerHTML = "<li>Inga träffar i Uppsala. Prova en gatuadress i närheten, eller tryck på kartan.</li>"; return; }
     ul.innerHTML = "";
